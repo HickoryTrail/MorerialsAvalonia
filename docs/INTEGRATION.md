@@ -31,7 +31,7 @@ public static AppBuilder BuildAvaloniaApp()
 
 ```xml
 <ItemGroup>
-  <PackageReference Include="MorerialsAvalonia" Version="1.0.0" />
+  <PackageReference Include="MorerialsAvalonia" Version="1.0.1" />
 </ItemGroup>
 ```
 
@@ -314,6 +314,6 @@ dotnet publish YourApp.csproj -c Release -r win-x64 --self-contained true
 
 ## 12. 参与本项目发布
 
-项目使用三段式 Git 标签：例如 `v1.0.0`。发布工作流会检查标签是否位于 `master` 历史，并要求存在 `docs/CHANGELOG/v1.0.0.md`。通过检查后，工作流会生成包、运行包消费烟雾测试、发布每个 DemoGallery 的 `win-x64` self-contained trimmed zip，然后在受保护的 `release` Environment 中发布 NuGet.org、GitHub Packages 和 GitHub Release。
+项目使用三段式 Git 标签：例如 `v1.0.1`。发布工作流会检查标签是否位于 `master` 历史，并要求存在 `docs/CHANGELOG/v1.0.1.md`。通过检查后，工作流会生成包、运行包消费烟雾测试、发布每个 DemoGallery 的 `win-x64` self-contained trimmed zip，然后在受保护的 `release` Environment 中发布 NuGet.org、GitHub Packages 和 GitHub Release。
 
 仓库管理员需要在 `release` Environment 设置 `NUGET_USERNAME`，并在 NuGet.org 配置 `NuGet/login@v1` 使用的 Trusted Publishing。GitHub Packages 使用工作流自动提供的 `GITHUB_TOKEN`。

@@ -33,7 +33,7 @@
 安装包：
 
 ```xml
-<PackageReference Include="MorerialsAvalonia" Version="1.0.0" />
+<PackageReference Include="MorerialsAvalonia" Version="1.0.1" />
 ```
 
 在 `App.axaml` 引入默认模板：
@@ -122,7 +122,7 @@ dotnet pack src/MorerialsAvalonia -c Release --no-build -o artifacts/nuget
 
 ## 版本与发布
 
-全局版本遵循三段式语义版本：NuGet 使用 `1.0.0`，GitHub Release 标签使用 `v1.0.0`。不接受四段式标签。
+全局版本遵循三段式语义版本：NuGet 使用 `1.0.1`，GitHub Release 标签使用 `v1.0.1`。不接受四段式标签。
 
 推送位于 `master` 可达提交上的 `vX.Y.Z` 标签会触发发布工作流：
 

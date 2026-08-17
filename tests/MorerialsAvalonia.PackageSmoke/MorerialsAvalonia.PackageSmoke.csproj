@@ -3,7 +3,7 @@
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
-    <MorerialsAvaloniaPackageVersion Condition="'$(MorerialsAvaloniaPackageVersion)' == ''">1.0.0</MorerialsAvaloniaPackageVersion>
+    <MorerialsAvaloniaPackageVersion Condition="'$(MorerialsAvaloniaPackageVersion)' == ''">1.0.1</MorerialsAvaloniaPackageVersion>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,4 +1,16 @@
+using Avalonia.Controls;
 using MorerialsAvalonia;
+
+var foregroundTarget = new TextBlock();
+MaterialForeground.SetMode(foregroundTarget, MaterialForegroundMode.Automatic);
+MaterialForeground.SetLuminanceThreshold(foregroundTarget, 0.45);
+
+if (MaterialForeground.GetMode(foregroundTarget) != MaterialForegroundMode.Automatic ||
+    MaterialForeground.GetLuminanceThreshold(foregroundTarget) != 0.45)
+{
+    Console.Error.WriteLine("NuGet 包未暴露自动前景色 API。");
+    return 1;
+}
 
 var result = await MaterialShaderCompiler.EnsureCompiledAsync();
 if (result.CompiledShaderCount + result.ReusedShaderCount < 3)
