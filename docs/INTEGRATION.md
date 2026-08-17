@@ -6,7 +6,7 @@
 
 当前版本只支持 Windows 10 2004 (19041) 及以上，并面向 Avalonia 12.1.0 与 .NET 10。应用必须通过 Windows 桌面后端创建 HWND，且当前 Avalonia 渲染器必须支持外部 GPU 图像互操作。
 
-不要为不支持的系统实现 CPU 截图或模糊备用效果。该库刻意不提供这种路径，以确保材质的性能和画面一致性。
+不推荐为不支持的系统实现 CPU 截图或模糊备用效果。该库刻意不提供这种路径，以确保材质的性能和画面一致性。
 
 Windows 桌面应用应选择能提供合成互操作的后端；Demo 使用下面的配置：
 
@@ -56,7 +56,7 @@ public static AppBuilder BuildAvaloniaApp()
 
 ## 4. 在启动时预热着色器
 
-库不会在打包时携带与用户 GPU/Windows 环境绑定的已编译 CSO。它在用户机器上从嵌入的 HLSL 进行编译，并将通过哈希校验的结果缓存在当前用户目录。
+为提高兼容性，库不会在打包时携带与用户 GPU/Windows 环境绑定的已编译 CSO，而是在用户机器上从嵌入的 HLSL 进行编译，并将结果缓存在当前用户目录。
 
 推荐在任何 Avalonia 窗口创建之前调用：
 
@@ -193,21 +193,21 @@ var strongerGlass = LiquidGlassProfiles.Reference with
 
 常用属性：
 
-| 属性 | 用途 |
-| --- | --- |
-| `CornerRadius` | 区域圆角，单位 DIP。 |
-| `HighlightIntensity` | 单控件覆盖高光强度；`NaN` 时使用 `Material.Highlight.Intensity`。 |
-| `Material.BlurRadius` | 高斯模糊半径，单位 DIP。 |
-| `Material.BlurDownsampleScale` | 模糊中间纹理缩放，范围 `0.1..1`。 |
-| `Material.RefractionCurve` | 边缘折射曲线。 |
-| `Material.Glow` | 方向性边缘发光。 |
-| `Material.Highlight` | 描边和内侧反射高光。 |
+| 属性                             | 用途                                                  |
+| ------------------------------ | --------------------------------------------------- |
+| `CornerRadius`                 | 区域圆角，单位 DIP。                                        |
+| `HighlightIntensity`           | 单控件覆盖高光强度；`NaN` 时使用 `Material.Highlight.Intensity`。 |
+| `Material.BlurRadius`          | 高斯模糊半径，单位 DIP。                                      |
+| `Material.BlurDownsampleScale` | 模糊中间纹理缩放，范围 `0.1..1`。                               |
+| `Material.RefractionCurve`     | 边缘折射曲线。                                             |
+| `Material.Glow`                | 方向性边缘发光。                                            |
+| `Material.Highlight`           | 描边和内侧反射高光。                                          |
 
 ## 8. 动态前景色
 
 `LiquidGlassContainer` 和 `LiquidGlassButton` 会为自身及其内容树中的可前景控件建立独立亮度探针。默认 `Automatic` 模式会基于该控件位置的桌面捕获纹理选择浅色或深色前景，因此较大的窗口里，不同位置的文本和按钮可以分别适配背景明暗。
 
-每 1000ms，GPU 会对每个自动目标做固定 3x3 采样、在线性空间归约为一个相对亮度值。CPU 不会读取桌面图像或材质纹理，只会接收每个控件一个 `float` 结果；单个 `MaterialHost` 每轮最多处理 128 个目标，即最多 512B 的读取量。
+每 1000ms，GPU 会对每个设置了`MaterialForeground.Mode="Automatic"`的控件采样，并依据背景亮度设置前景色。
 
 ```xml
 <liquid:LiquidGlassContainer xmlns:materials="using:MorerialsAvalonia"
@@ -239,14 +239,14 @@ var strongerGlass = LiquidGlassProfiles.Reference with
 
 `MaterialForeground.Mode` 的取值：
 
-| 模式 | 行为 |
-| --- | --- |
-| `Automatic` | 默认值。控件独立采样并自动选择 `LightForeground` 或 `DarkForeground`。 |
-| `Inherit` | 不创建新探针，继承父级已解析的颜色和 `ResolvedKind`，适合大量重复子项。 |
-| `Light` / `Dark` | 不采样，强制使用配置的浅色或深色前景。该模式可继承给子控件。 |
-| `Manual` | 不干预普通 Avalonia `Foreground`，适合业务自行设置颜色的控件。 |
+| 模式               | 行为                                                    |
+| ---------------- | ----------------------------------------------------- |
+| `Automatic`      | 默认值。控件独立采样并自动选择 `LightForeground` 或 `DarkForeground`。 |
+| `Inherit`        | 不创建新探针，继承父级已解析的颜色和 `ResolvedKind`，适合大量重复子项。           |
+| `Light` / `Dark` | 不采样，强制使用配置的浅色或深色前景。该模式可继承给子控件。                        |
+| `Manual`         | 不干预普通 Avalonia `Foreground`，适合业务自行设置颜色的控件。            |
 
-`LightForeground`、`DarkForeground`、`LuminanceThreshold` 和 `ResolvedKind` 都是可继承附加属性。`ResolvedKind` 可绑定到样式或视图模型；对于 128 个自动目标以外的重复内容，请将父级自动采样、子级设为 `Inherit`，避免不必要的采样。
+`LightForeground`、`DarkForeground`、`LuminanceThreshold` 和 `ResolvedKind` 都是可继承附加属性。`ResolvedKind` 可绑定到样式或视图模型；对于大量处于同一区域的内容，请将父级自动采样、子级设为 `Inherit`，避免不必要的采样。
 
 ## 9. 观察运行状态
 
