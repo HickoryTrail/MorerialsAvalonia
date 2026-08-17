@@ -1,0 +1,248 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build release artifacts
+    runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate three-part tag and master ancestry
+        id: version
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "发布标签必须是 vX.Y.Z 三段式版本，当前为: $tag"
+          }
+
+          git fetch --force origin master:refs/remotes/origin/master
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $tagCommit = (git rev-list -n 1 $tag).Trim()
+          git merge-base --is-ancestor $tagCommit origin/master
+          if ($LASTEXITCODE -ne 0) {
+            throw "标签 $tag 指向的提交不在 master 历史中。"
+          }
+
+          $notes = "docs/CHANGELOG/$tag.md"
+          if (-not (Test-Path -LiteralPath $notes)) {
+            throw "缺少发布说明: $notes"
+          }
+
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$($tag.Substring(1))" >> $env:GITHUB_OUTPUT
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore solution
+        run: dotnet restore MorerialsAvalonia.slnx
+
+      - name: Build solution
+        shell: pwsh
+        run: |
+          dotnet build MorerialsAvalonia.slnx --configuration Release --no-restore --nologo `
+            -p:Version=${{ steps.version.outputs.version }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run shader-cache tests
+        shell: pwsh
+        run: |
+          dotnet test tests/MorerialsAvalonia.Tests/MorerialsAvalonia.Tests.csproj `
+            --configuration Release --no-build --nologo `
+            -p:Version=${{ steps.version.outputs.version }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Pack NuGet library
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/nuget | Out-Null
+          dotnet pack src/MorerialsAvalonia/MorerialsAvalonia.csproj `
+            --configuration Release --no-build --no-restore `
+            -p:Version=${{ steps.version.outputs.version }} `
+            --output artifacts/nuget
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $packages = Get-ChildItem artifacts/nuget -Filter '*.nupkg'
+          if ($packages.Count -ne 1) { throw "应生成一个 .nupkg，实际数量: $($packages.Count)" }
+
+      - name: Compile an AXAML package consumer
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          $localSource = (Resolve-Path artifacts/nuget).Path
+          $nugetConfig = Join-Path $env:RUNNER_TEMP "morerialsavalonia-package-smoke.nuget.config"
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local" value="$localSource" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+            </packageSources>
+          </configuration>
+          "@ | Set-Content -LiteralPath $nugetConfig -Encoding utf8
+          dotnet restore tests/MorerialsAvalonia.PackageSmoke/MorerialsAvalonia.PackageSmoke.csproj `
+            --configfile $nugetConfig `
+            -p:MorerialsAvaloniaPackageVersion=$version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          dotnet build tests/MorerialsAvalonia.PackageSmoke/MorerialsAvalonia.PackageSmoke.csproj `
+            --configuration Release --no-restore --nologo `
+            -p:MorerialsAvaloniaPackageVersion=$version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          dotnet run --project tests/MorerialsAvalonia.PackageSmoke/MorerialsAvalonia.PackageSmoke.csproj `
+            --configuration Release --no-build `
+            -p:MorerialsAvaloniaPackageVersion=$version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish every DemoGallery as self-contained trimmed win-x64
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.version }}'
+          New-Item -ItemType Directory -Force artifacts/demos | Out-Null
+          $projects = Get-ChildItem demos -Recurse -Filter '*.csproj' |
+            Where-Object { $_.BaseName -like '*DemoGallery' -or $_.Directory.Name -like '*DemoGallery' }
+          if ($projects.Count -eq 0) { throw '未找到任何 DemoGallery 项目。' }
+
+          foreach ($project in $projects) {
+            $output = Join-Path 'artifacts/demos' $project.BaseName
+            dotnet publish $project.FullName `
+              --configuration Release --runtime win-x64 --self-contained true --no-restore `
+              -p:Version=$version -p:PublishTrimmed=true -p:TrimMode=partial `
+              --output $output
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            if ($null -eq (Get-ChildItem -LiteralPath $output -File | Select-Object -First 1)) {
+              throw "DemoGallery 发布目录为空: $output"
+            }
+
+            # Release 包不携带调试符号；这不会影响 single-file 自解压的本机依赖。
+            Get-ChildItem -LiteralPath $output -Filter '*.pdb' -File | Remove-Item -Force
+
+            $zip = Join-Path 'artifacts' "$($project.BaseName)-win-x64-self-contained-trimmed-$version.zip"
+            Compress-Archive -Path (Join-Path $output '*') -DestinationPath $zip -Force
+          }
+
+      - name: Prepare release notes and checksums
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          Copy-Item "docs/CHANGELOG/$tag.md" artifacts/release-notes.md
+          $assets = Get-ChildItem artifacts -File -Recurse |
+            Where-Object { $_.Extension -in '.nupkg', '.snupkg', '.zip' }
+          if ($assets.Count -lt 2) { throw 'Release 必须至少包含 nupkg 和一个 DemoGallery zip。' }
+
+          $checksums = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($asset.Name)"
+          }
+          Set-Content -LiteralPath artifacts/SHA256SUMS.txt -Value $checksums -NoNewline
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          if-no-files-found: error
+          path: |
+            artifacts/nuget/*.nupkg
+            artifacts/nuget/*.snupkg
+            artifacts/*.zip
+            artifacts/release-notes.md
+            artifacts/SHA256SUMS.txt
+
+  publish:
+    name: Approve and publish release
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    environment:
+      name: release
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-artifacts
+          path: artifacts
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Authenticate to NuGet.org with Trusted Publishing
+        id: nuget_login
+        uses: NuGet/login@v1
+        with:
+          # 在受保护的 release Environment 中设置 NUGET_USERNAME 变量。
+          user: ${{ vars.NUGET_USERNAME }}
+
+      - name: Publish to NuGet.org
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem artifacts -Recurse -Filter '*.nupkg' | Select-Object -First 1
+          if ($null -eq $package) { throw '未找到待发布的 nupkg。' }
+          dotnet nuget push $package.FullName `
+            --api-key '${{ steps.nuget_login.outputs.NUGET_API_KEY }}' `
+            --source "https://api.nuget.org/v3/index.json" --skip-duplicate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish to GitHub Packages
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $package = Get-ChildItem artifacts -Recurse -Filter '*.nupkg' | Select-Object -First 1
+          if ($null -eq $package) { throw '未找到待发布的 nupkg。' }
+          $source = "https://nuget.pkg.github.com/$env:GITHUB_REPOSITORY_OWNER/index.json"
+          dotnet nuget add source $source --name github `
+            --username $env:GITHUB_REPOSITORY_OWNER `
+            --password $env:GITHUB_TOKEN --store-password-in-clear-text
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet nuget push $package.FullName --api-key $env:GITHUB_TOKEN --source github --skip-duplicate
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Create or update GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ needs.build.outputs.tag }}'
+          $assets = Get-ChildItem artifacts -File -Recurse |
+            Where-Object { $_.Extension -in '.nupkg', '.snupkg', '.zip' -or $_.Name -eq 'SHA256SUMS.txt' } |
+            Select-Object -ExpandProperty FullName
+          if ($assets.Count -lt 2) { throw 'GitHub Release 缺少 nupkg 或 DemoGallery zip。' }
+
+          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag --repo $env:GITHUB_REPOSITORY --title $tag --notes-file artifacts/release-notes.md
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            gh release upload $tag --repo $env:GITHUB_REPOSITORY @assets --clobber
+          }
+          else {
+            gh release create $tag --repo $env:GITHUB_REPOSITORY @assets `
+              --title $tag --notes-file artifacts/release-notes.md
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -1,0 +1,63 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="using:MorerialsAvalonia"
+        xmlns:controls="using:MorerialsAvalonia.Controls"
+        xmlns:liquid="using:MorerialsAvalonia.Materials.LiquidGlass">
+  <Styles.Resources>
+    <controls:UniformCornerRadiusConverter x:Key="UniformCornerRadiusConverter" />
+  </Styles.Resources>
+
+  <Style Selector="local|MaterialHost">
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ClipToBounds="True">
+          <controls:MaterialBackdropSurface x:Name="PART_BackdropSurface"
+                                            IsHitTestVisible="False"
+                                            HorizontalAlignment="Stretch"
+                                            VerticalAlignment="Stretch" />
+          <ContentPresenter Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+
+  <!-- 外层 Border 保留原生下投影和完整命中区域，内层只负责裁剪玻璃内容。 -->
+  <Style Selector="liquid|LiquidGlassButton">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderBrush" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="ClipToBounds" Value="False" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Grid ClipToBounds="False">
+          <!-- 使用极低透明度填充，避免透明 Border 被后端跳过而丢失 BoxShadow。 -->
+          <Border Background="#01000000"
+                  BoxShadow="0 6 12 1 #15000000"
+                  CornerRadius="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource UniformCornerRadiusConverter}}"
+                  IsHitTestVisible="False" />
+          <Border Background="Transparent"
+                  BorderBrush="{TemplateBinding BorderBrush}"
+                  BorderThickness="{TemplateBinding BorderThickness}"
+                  CornerRadius="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource UniformCornerRadiusConverter}}">
+            <Border Background="{TemplateBinding Background}"
+                    ClipToBounds="True"
+                    CornerRadius="{Binding CornerRadius, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource UniformCornerRadiusConverter}}">
+              <ContentPresenter Content="{TemplateBinding Content}"
+                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                HorizontalAlignment="Stretch"
+                                VerticalAlignment="Stretch"
+                                HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                Padding="{TemplateBinding Padding}" />
+            </Border>
+          </Border>
+        </Grid>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+</Styles>

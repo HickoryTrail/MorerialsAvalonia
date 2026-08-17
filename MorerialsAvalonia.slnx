@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/MorerialsAvalonia/MorerialsAvalonia.csproj" />
+  <Project Path="demos/MorerialsAvalonia.LiquidGlass.DemoGallery/MorerialsAvalonia.LiquidGlass.DemoGallery.csproj" />
+  <Project Path="tests/MorerialsAvalonia.Tests/MorerialsAvalonia.Tests.csproj" />
+</Solution>

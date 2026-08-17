@@ -1,0 +1,118 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:materials="using:MorerialsAvalonia"
+        xmlns:liquid="using:MorerialsAvalonia.Materials.LiquidGlass"
+        x:Class="MorerialsAvalonia.LiquidGlass.DemoGallery.MainWindow"
+        mc:Ignorable="d"
+        d:DesignWidth="250"
+        d:DesignHeight="80"
+        Width="1000"
+        Height="112"
+        Title="MorerialsAvalonia - Liquid Glass DemoGallery"
+        WindowDecorations="None"
+        CanResize="False"
+        TransparencyLevelHint="Transparent"
+        Background="Transparent"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Styles>
+        <Style Selector=":is(Button).accent-action">
+            <Setter Property="Width" Value="110" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Padding" Value="20,10" />
+            <Setter Property="CornerRadius" Value="20" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+    </Window.Styles>
+
+    <materials:MaterialHost x:Name="Materials"
+                            ExcludeWindowFromCapture="True"
+                            EnableOcclusionPause="True">
+        <Border Margin="20,10"
+                CornerRadius="30"
+                Background="Transparent"
+                BoxShadow="0 0 4 0 #59000000"
+                PointerPressed="OnDragAreaPointerPressed">
+            <Border CornerRadius="30"
+                    ClipToBounds="True"
+                    Background="Transparent">
+                <liquid:LiquidGlassContainer CornerRadius="30"
+                                              HighlightIntensity="0.3"
+                                              materials:MaterialForeground.Mode="Automatic"
+                                              materials:MaterialForeground.LightForeground="#FFF8FAFC"
+                                              materials:MaterialForeground.DarkForeground="#FF101827"
+                                              materials:MaterialForeground.LuminanceThreshold="0.45"
+                                              HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Stretch">
+                    <liquid:LiquidGlassContainer.Transitions>
+                        <Transitions>
+                            <BrushTransition Property="Foreground"
+                                             Duration="0:0:0.3" />
+                        </Transitions>
+                    </liquid:LiquidGlassContainer.Transitions>
+                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="24,0">
+                        <StackPanel VerticalAlignment="Center" Spacing="2">
+                            <TextBlock Text="MorerialsAvalonia"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       materials:MaterialForeground.Mode="Automatic">
+                                <TextBlock.Transitions>
+                                    <Transitions>
+                                        <BrushTransition Property="TextElement.Foreground"
+                                                         Duration="0:0:0.3" />
+                                    </Transitions>
+                                </TextBlock.Transitions>
+                            </TextBlock>
+                            <TextBlock Text="Liquid Glass / WGC / D3D11"
+                                       Opacity="0.72"
+                                       FontSize="12"
+                                       materials:MaterialForeground.Mode="Automatic">
+                                <TextBlock.Transitions>
+                                    <Transitions>
+                                        <BrushTransition Property="TextElement.Foreground"
+                                                         Duration="0:0:0.3" />
+                                    </Transitions>
+                                </TextBlock.Transitions>
+                            </TextBlock>
+                        </StackPanel>
+                        <TextBlock Grid.Column="1"
+                                   Text="GPU material DemoGallery"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Opacity="0.82"
+                                   materials:MaterialForeground.Mode="Automatic">
+                            <TextBlock.Transitions>
+                                <Transitions>
+                                    <BrushTransition Property="TextElement.Foreground"
+                                                     Duration="0:0:0.3" />
+                                </Transitions>
+                            </TextBlock.Transitions>
+                        </TextBlock>
+                        <liquid:LiquidGlassButton x:Name="ActionButton"
+                                                  Grid.Column="2"
+                                                  Classes="accent-action"
+                                                  Content="Press me"
+                                                  Click="OnActionClick"
+                                                  materials:MaterialForeground.Mode="Automatic"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center">
+                            <liquid:LiquidGlassButton.Transitions>
+                                <Transitions>
+                                    <BrushTransition Property="Foreground"
+                                                     Duration="0:0:0.3" />
+                                </Transitions>
+                            </liquid:LiquidGlassButton.Transitions>
+                        </liquid:LiquidGlassButton>
+                    </Grid>
+                </liquid:LiquidGlassContainer>
+            </Border>
+        </Border>
+    </materials:MaterialHost>
+</Window>

@@ -1,0 +1,94 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - "**"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build, test, and consume package
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore solution
+        run: dotnet restore MorerialsAvalonia.slnx
+
+      - name: Build solution
+        run: dotnet build MorerialsAvalonia.slnx --configuration Release --no-restore --nologo
+
+      - name: Run shader-cache tests
+        run: dotnet test tests/MorerialsAvalonia.Tests/MorerialsAvalonia.Tests.csproj --configuration Release --no-build --nologo
+
+      - name: Pack library
+        shell: pwsh
+        run: |
+          $version = "1.0.0-ci.${{ github.run_number }}"
+          dotnet pack src/MorerialsAvalonia/MorerialsAvalonia.csproj `
+            --configuration Release --no-build --no-restore `
+            -p:Version=$version --output artifacts/nuget
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $package = Get-ChildItem artifacts/nuget -Filter "MorerialsAvalonia.$version.nupkg" | Select-Object -First 1
+          if ($null -eq $package) { throw "未生成预期的 NuGet 包。" }
+
+          Expand-Archive -LiteralPath $package.FullName -DestinationPath artifacts/package-inspection -Force
+          $required = @(
+            "artifacts/package-inspection/README.md",
+            "artifacts/package-inspection/LICENSE",
+            "artifacts/package-inspection/lib/net10.0-windows10.0.19041/MorerialsAvalonia.dll"
+          )
+          $missing = $required | Where-Object { -not (Test-Path -LiteralPath $_) }
+          if ($missing) { throw "NuGet 包缺少必要内容: $($missing -join ', ')" }
+
+      - name: Compile an AXAML package consumer
+        shell: pwsh
+        run: |
+          $version = "1.0.0-ci.${{ github.run_number }}"
+          $localSource = (Resolve-Path artifacts/nuget).Path
+          $nugetConfig = Join-Path $env:RUNNER_TEMP "morerialsavalonia-package-smoke.nuget.config"
+          @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local" value="$localSource" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" protocolVersion="3" />
+            </packageSources>
+          </configuration>
+          "@ | Set-Content -LiteralPath $nugetConfig -Encoding utf8
+          dotnet restore tests/MorerialsAvalonia.PackageSmoke/MorerialsAvalonia.PackageSmoke.csproj `
+            --configfile $nugetConfig `
+            -p:MorerialsAvaloniaPackageVersion=$version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          dotnet build tests/MorerialsAvalonia.PackageSmoke/MorerialsAvalonia.PackageSmoke.csproj `
+            --configuration Release --no-restore --nologo `
+            -p:MorerialsAvaloniaPackageVersion=$version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          dotnet run --project tests/MorerialsAvalonia.PackageSmoke/MorerialsAvalonia.PackageSmoke.csproj `
+            --configuration Release --no-build `
+            -p:MorerialsAvaloniaPackageVersion=$version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload validation package
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          if-no-files-found: error
+          path: artifacts/nuget/*.nupkg

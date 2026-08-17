@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <MorerialsAvaloniaPackageVersion Condition="'$(MorerialsAvaloniaPackageVersion)' == ''">1.0.0</MorerialsAvaloniaPackageVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.0" />
+    <PackageReference Include="MorerialsAvalonia" Version="$(MorerialsAvaloniaPackageVersion)" />
+  </ItemGroup>
+</Project>

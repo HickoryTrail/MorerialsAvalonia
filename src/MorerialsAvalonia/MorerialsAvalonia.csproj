@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>MorerialsAvalonia</AssemblyName>
+    <RootNamespace>MorerialsAvalonia</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <IsPackable>true</IsPackable>
+    <PackageId>MorerialsAvalonia</PackageId>
+    <Title>MorerialsAvalonia</Title>
+    <Authors>HickoryTrail</Authors>
+    <Product>MorerialsAvalonia</Product>
+    <Description>Windows-only GPU materials for Avalonia, beginning with Liquid Glass.</Description>
+    <PackageTags>avalonia;materials;liquid-glass;wgc;d3d11;hlsl;windows</PackageTags>
+    <PackageProjectUrl>https://github.com/HickoryTrail/MorerialsAvalonia</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/HickoryTrail/MorerialsAvalonia</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>LGPL-3.0-only</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
+    <PackageReference Include="Silk.NET.Direct3D11" />
+    <PackageReference Include="Silk.NET.DXGI" />
+    <PackageReference Include="Silk.NET.Direct3D.Compilers" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" Link="LICENSE" />
+    <None Remove="Shaders\*.hlsl" />
+    <EmbeddedResource Include="Shaders\*.hlsl"
+                      LogicalName="MorerialsAvalonia.Shaders.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>
