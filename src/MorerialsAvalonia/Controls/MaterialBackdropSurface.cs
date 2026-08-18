@@ -37,6 +37,7 @@ public sealed class MaterialBackdropSurface : Control
     private bool _initializing;
     private bool _renderActive;
     private int _invalidationPosted;
+    private int _sessionGeneration;
 
     /// <summary>
     /// 初始化模板内部使用的 GPU 呈现层。
@@ -98,11 +99,8 @@ public sealed class MaterialBackdropSurface : Control
 
     protected override void OnDetachedFromLogicalTree(LogicalTreeAttachmentEventArgs e)
     {
-        _initialized = false;
-        _renderActive = false;
-        _updateQueued = false;
-        _renderTimer.Stop();
-        _activityTimer.Stop();
+        Interlocked.Increment(ref _sessionGeneration);
+        StopHostSession();
         if (_topLevel is not null)
             _topLevel.PropertyChanged -= OnTopLevelPropertyChanged;
         if (_host is not null)
@@ -111,17 +109,7 @@ public sealed class MaterialBackdropSurface : Control
             _host.ForegroundProbeRegistry.Changed -= OnRenderInvalidated;
         }
         Interlocked.Exchange(ref _invalidationPosted, 0);
-        if (_renderer is not null)
-            _renderer.RenderInvalidated -= OnRenderInvalidated;
-        _renderer?.Dispose();
-        _renderer = null;
-        _surface?.Dispose();
-        _surface = null;
-        _visual = null;
-        _compositor = null;
-        RestoreCaptureExclusion();
         _topLevel = null;
-        _hwnd = 0;
         base.OnDetachedFromLogicalTree(e);
     }
 
@@ -139,15 +127,18 @@ public sealed class MaterialBackdropSurface : Control
         if (_initializing || _initialized || _host is null)
             return;
 
+        var generation = Volatile.Read(ref _sessionGeneration);
         _initializing = true;
         try
         {
-            if (_topLevel is null || TopLevel.GetTopLevel(this) is null || !_host.IsActiveForTopLevel)
+            if (!IsCurrentSession(generation))
                 return;
 
             // 用户预热后这里通常只校验哈希和缓存；漏调预热时也不会中断窗口启动。
             _host.Diagnostics.ShaderState = MaterialShaderState.Compiling;
             await MaterialShaderCompiler.EnsureCompiledAsync();
+            if (!IsCurrentSession(generation))
+                return;
             _host.Diagnostics.ShaderState = MaterialShaderState.Ready;
 
             var elementVisual = ElementComposition.GetElementVisual(this)
@@ -161,6 +152,8 @@ public sealed class MaterialBackdropSurface : Control
 
             var interop = await _compositor.TryGetCompositionGpuInterop()
                 ?? throw new NotSupportedException("当前 Avalonia 渲染器不支持外部 GPU 图像互操作。");
+            if (!IsCurrentSession(generation))
+                return;
             var handle = TopLevel.GetTopLevel(this)?.TryGetPlatformHandle();
             if (handle is null || handle.Handle == 0 || handle.HandleDescriptor != "HWND")
                 throw new NotSupportedException("MaterialHost 需要 Windows HWND 才能执行桌面捕获。");
@@ -184,6 +177,7 @@ public sealed class MaterialBackdropSurface : Control
         {
             MaterialLogger.Write("MaterialHost 初始化失败", exception);
             _host.Diagnostics.Fail(exception.Message);
+            StopHostSession();
         }
         finally
         {
@@ -209,6 +203,43 @@ public sealed class MaterialBackdropSurface : Control
 
         // 宿主的单窗口注册在父控件附加后完成，延后到 Loaded 阶段避免首次附加时误判。
         Dispatcher.UIThread.Post(InitializeComposition, DispatcherPriority.Loaded);
+    }
+
+    private bool IsCurrentSession(int generation)
+        => generation == Volatile.Read(ref _sessionGeneration) &&
+           _host is not null &&
+           _topLevel is not null &&
+           TopLevel.GetTopLevel(this) is not null &&
+           _host.IsActiveForTopLevel;
+
+    private void StopHostSession()
+    {
+        Interlocked.Increment(ref _sessionGeneration);
+        _initialized = false;
+        _renderActive = false;
+        _updateQueued = false;
+        _renderTimer.Stop();
+        _activityTimer.Stop();
+        Interlocked.Exchange(ref _invalidationPosted, 0);
+
+        if (_topLevel is not null)
+            _topLevel.PropertyChanged -= OnTopLevelPropertyChanged;
+        if (_host is not null)
+        {
+            _host.RegionRegistry.Changed -= OnRenderInvalidated;
+            _host.ForegroundProbeRegistry.Changed -= OnRenderInvalidated;
+        }
+
+        if (_renderer is not null)
+            _renderer.RenderInvalidated -= OnRenderInvalidated;
+        _renderer?.Dispose();
+        _renderer = null;
+        _surface?.Dispose();
+        _surface = null;
+        _visual = null;
+        _compositor = null;
+        RestoreCaptureExclusion();
+        _hwnd = 0;
     }
 
     private void QueueNextFrame()
@@ -245,14 +276,14 @@ public sealed class MaterialBackdropSurface : Control
 
         try
         {
-            // WGC 源切换可能泵送 WinRT 消息，必须在合成提交之外执行。
+            // Desktop Duplication 源切换可能重建 DXGI duplication，必须在合成提交之外执行。
             _renderer.RefreshCaptureSource();
         }
         catch (Exception exception)
         {
-            MaterialLogger.Write("Windows Graphics Capture 源刷新失败", exception);
+            MaterialLogger.Write("Desktop Duplication 源刷新失败", exception);
             _host.Diagnostics.Fail(exception.Message);
-            _initialized = false;
+            StopHostSession();
             return;
         }
 
@@ -304,7 +335,7 @@ public sealed class MaterialBackdropSurface : Control
         {
             MaterialLogger.Write("材质合成帧失败", exception);
             _host.Diagnostics.Fail($"材质合成帧失败: {exception.Message}");
-            _initialized = false;
+            StopHostSession();
         }
     }
 

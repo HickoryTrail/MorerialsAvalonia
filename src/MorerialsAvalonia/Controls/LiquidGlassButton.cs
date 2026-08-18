@@ -51,6 +51,7 @@ public sealed class LiquidGlassButton : Button
     private bool _hovered;
     private bool _pressed;
     private bool _animationsEnabled = true;
+    private WindowBase? _window;
 
     /// <summary>初始化 <see cref="LiquidGlassButton"/>。</summary>
     public LiquidGlassButton()
@@ -66,6 +67,7 @@ public sealed class LiquidGlassButton : Button
         _registration = new MaterialRegionRegistration(this, CreateRegion);
         _foregroundScope = new MaterialForegroundScope(this);
         _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(8), DispatcherPriority.Render, OnAnimationTick);
+        LostFocus += (_, _) => ResetInteractionState();
     }
 
     /// <summary>获取或设置液态玻璃圆角半径，单位为 DIP。</summary>
@@ -96,12 +98,20 @@ public sealed class LiquidGlassButton : Button
         base.OnAttachedToVisualTree(e);
         _animationsEnabled = WindowsNative.AreClientAnimationsEnabled();
         _lastTime = _clock.Elapsed.TotalSeconds;
+        _window = TopLevel.GetTopLevel(this) as WindowBase;
+        if (_window is not null)
+            _window.Deactivated += OnWindowDeactivated;
         _registration.Attach();
         _foregroundScope.Attach();
     }
 
     protected override void OnDetachedFromLogicalTree(LogicalTreeAttachmentEventArgs e)
     {
+        if (_window is not null)
+            _window.Deactivated -= OnWindowDeactivated;
+        _window = null;
+        _hovered = false;
+        _pressed = false;
         _timer.Stop();
         _foregroundScope.Dispose();
         _registration.Dispose();
@@ -249,6 +259,19 @@ public sealed class LiquidGlassButton : Button
 
         _lastTime = _clock.Elapsed.TotalSeconds;
         _timer.Start();
+    }
+
+    private void OnWindowDeactivated(object? sender, EventArgs e)
+        => ResetInteractionState();
+
+    private void ResetInteractionState()
+    {
+        if (!_hovered && !_pressed)
+            return;
+
+        _hovered = false;
+        _pressed = false;
+        EnsureAnimationRunning();
     }
 
     private bool IsSettled(double targetScale, double targetOffset)

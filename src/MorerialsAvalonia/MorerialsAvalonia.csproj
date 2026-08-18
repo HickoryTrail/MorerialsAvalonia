@@ -13,7 +13,7 @@
     <Authors>HickoryTrail</Authors>
     <Product>MorerialsAvalonia</Product>
     <Description>Windows-only GPU materials for Avalonia, beginning with Liquid Glass.</Description>
-    <PackageTags>avalonia;materials;liquid-glass;wgc;d3d11;hlsl;windows</PackageTags>
+    <PackageTags>avalonia;materials;liquid-glass;desktop-duplication;d3d11;hlsl;windows</PackageTags>
     <PackageProjectUrl>https://github.com/HickoryTrail/MorerialsAvalonia</PackageProjectUrl>
     <RepositoryUrl>https://github.com/HickoryTrail/MorerialsAvalonia</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -24,7 +24,7 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
-    <Version>1.0.1</Version>
+    <Version>1.1.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

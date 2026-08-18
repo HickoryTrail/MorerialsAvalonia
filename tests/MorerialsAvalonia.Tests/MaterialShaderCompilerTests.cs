@@ -1,6 +1,10 @@
 using Avalonia;
+using MorerialsAvalonia.Capture;
 using MorerialsAvalonia.Controls;
 using MorerialsAvalonia.Materials.LiquidGlass;
+using Silk.NET.Core.Native;
+using Silk.NET.DXGI;
+using Silk.NET.Maths;
 using Xunit;
 
 namespace MorerialsAvalonia.Tests;
@@ -53,5 +57,61 @@ public sealed class MaterialShaderCompilerTests
         Assert.Equal(
             MaterialForegroundKind.Dark,
             MaterialForeground.ResolveKind(0.72f, 0.45));
+    }
+
+    [Fact]
+    public void Desktop_duplication_pointer_only_frame_does_not_intersect_a_crop()
+    {
+        ComPtr<IDXGIResource> resource = default;
+        using var frame = new CaptureFrameLease(
+            resource,
+            default,
+            Array.Empty<Box2D<int>>(),
+            Array.Empty<OutduplMoveRect>(),
+            1,
+            1920,
+            1080,
+            1);
+
+        Assert.False(frame.IntersectsCrop(0, 0, 500, 500));
+    }
+
+    [Fact]
+    public void Desktop_duplication_dirty_rect_outside_crop_is_skipped()
+    {
+        ComPtr<IDXGIResource> resource = default;
+        using var frame = new CaptureFrameLease(
+            resource,
+            new OutduplFrameInfo { LastPresentTime = 1 },
+            [new Box2D<int>(1000, 700, 1200, 900)],
+            Array.Empty<OutduplMoveRect>(),
+            1,
+            1920,
+            1080,
+            1);
+
+        Assert.False(frame.IntersectsCrop(0, 0, 500, 500));
+    }
+
+    [Fact]
+    public void Desktop_duplication_move_rect_uses_both_source_and_destination()
+    {
+        ComPtr<IDXGIResource> resource = default;
+        using var frame = new CaptureFrameLease(
+            resource,
+            default,
+            Array.Empty<Box2D<int>>(),
+            [new OutduplMoveRect
+            {
+                SourcePoint = new Vector2D<int>(50, 50),
+                DestinationRect = new Box2D<int>(300, 300, 400, 400)
+            }],
+            1,
+            1920,
+            1080,
+            1);
+
+        Assert.True(frame.IntersectsCrop(0, 0, 100, 100));
+        Assert.True(frame.IntersectsCrop(350, 350, 450, 450));
     }
 }

@@ -1,6 +1,6 @@
 # MorerialsAvalonia 接入教程
 
-本教程以现有 Avalonia Windows 桌面应用为对象，接入 `MorerialsAvalonia` 的 Liquid Glass 材质。完成后，材质背景由 Windows Graphics Capture 和 D3D11 在 GPU 中持续合成；普通 Avalonia 控件仍负责布局、文本、输入和业务逻辑。
+本教程以现有 Avalonia Windows 桌面应用为对象，接入 `MorerialsAvalonia` 的 Liquid Glass 材质。完成后，材质背景由 DXGI Desktop Duplication 和 D3D11 在 GPU 中持续合成；普通 Avalonia 控件仍负责布局、文本、输入和业务逻辑。
 
 ## 1. 确认前提条件
 
@@ -89,7 +89,7 @@ logger.LogInformation(
 
 1. `Diagnostics.ShaderState` 变为 `Compiling`。
 2. HLSL 在用户机器上编译，缓存被原子写入。
-3. 成功后状态变为 `Ready`，随后创建 WGC/D3D11 管线。
+3. 成功后状态变为 `Ready`，随后创建 Desktop Duplication/D3D11 管线。
 
 因此不会因为“缓存尚未生成”报错；代价是首次窗口显示可能多一次编译等待。编译器本身或 HLSL 真正失败时，错误会写入 `Diagnostics.Error`。
 
@@ -253,7 +253,7 @@ var strongerGlass = LiquidGlassProfiles.Reference with
 `MaterialHost.Diagnostics` 是可绑定的 `INotifyPropertyChanged` 对象，可用于开发版状态栏、日志或错误提示。关键属性包括：
 
 - `ShaderState`：`NotPrepared`、`Compiling`、`Ready` 或 `Failed`。
-- `CaptureState`：WGC 会话状态。
+- `CaptureState`：Desktop Duplication 会话状态。
 - `Adapter`：与 Avalonia 合成器匹配的 D3D11 适配器。
 - `InteropState`：共享纹理/合成互操作状态。
 - `FramesPerSecond`、`CaptureFramesPerSecond`、`CaptureFrameAgeMilliseconds` 和 `DroppedFrames`。
@@ -292,7 +292,7 @@ Materials.Diagnostics.PropertyChanged += (_, eventArgs) =>
 
 ### 录屏或截图里看不到应用窗口
 
-默认的 `ExcludeWindowFromCapture` 会让当前窗口不进入 WGC 捕获，以防递归。录屏工具的行为依实现而异；如需临时调试，明确设为 `False`，完成后恢复默认值。
+默认的 `ExcludeWindowFromCapture` 会让当前窗口不进入 Desktop Duplication 捕获，以防递归。录屏工具的行为依实现而异；如需临时调试，明确设为 `False`，完成后恢复默认值。
 
 ### `ShaderState` 为 `Failed`
 
@@ -310,7 +310,7 @@ Materials.Diagnostics.PropertyChanged += (_, eventArgs) =>
 dotnet publish YourApp.csproj -c Release -r win-x64 --self-contained true
 ```
 
-首个材质窗口前仍应保留预热调用。对于宿主应用，建议记录 `MaterialShaderCompilationResult` 和 `MaterialHost.Diagnostics.Error`，这样可区分首次缓存编译、设备互操作失败和 WGC 权限/平台问题。
+首个材质窗口前仍应保留预热调用。对于宿主应用，建议记录 `MaterialShaderCompilationResult` 和 `MaterialHost.Diagnostics.Error`，这样可区分首次缓存编译、设备互操作失败和 Desktop Duplication 权限/平台问题。
 
 ## 12. 参与本项目发布
 

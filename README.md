@@ -1,6 +1,6 @@
 # MorerialsAvalonia
 
-面向 Avalonia 的高性能 Windows GPU 材质库。`MorerialsAvalonia` 通过 Windows Graphics Capture、D3D11 和 Avalonia GPU 合成在控件后方绘制动态材质。
+面向 Avalonia 的高性能 Windows GPU 材质库。`MorerialsAvalonia` 通过 DXGI Desktop Duplication、D3D11 和 Avalonia GPU 合成在控件后方绘制动态材质。
 
 目前支持的材质有：
 
@@ -14,7 +14,7 @@
 ## 特性
 
 - 面向 `Windows10.0.19041+` 的 Avalonia 12 控件库。
-- `MaterialHost` 为一个顶级窗口维护共享的 WGC/D3D11 合成上下文。
+- `MaterialHost` 为一个顶级窗口维护共享的 Desktop Duplication/D3D11 合成上下文。
 
 - `MaterialForeground` 会让材质控件中的前景控件按各自所在位置独立选择深色或浅色文本。
 - 内置 HLSL 在**最终用户机器**上编译并缓存；应用可在创建窗口前预热。
@@ -84,7 +84,7 @@ MaterialShaderCompiler.EnsureCompiledAsync().GetAwaiter().GetResult();
 ```text
 MaterialHost
   -> MaterialBackdropSurface
-     -> DesktopCaptureService (Windows Graphics Capture)
+     -> DesktopCaptureService (DXGI Desktop Duplication)
      -> D3D11MaterialRenderer
      -> LiquidGlass HLSL pass
   -> LiquidGlassContainer / LiquidGlassButton (区域注册)

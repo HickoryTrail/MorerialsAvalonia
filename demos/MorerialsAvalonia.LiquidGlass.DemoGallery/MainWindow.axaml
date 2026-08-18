@@ -70,7 +70,7 @@
                                     </Transitions>
                                 </TextBlock.Transitions>
                             </TextBlock>
-                            <TextBlock Text="Liquid Glass / WGC / D3D11"
+                            <TextBlock Text="Liquid Glass / Desktop Duplication / D3D11"
                                        Opacity="0.72"
                                        FontSize="12"
                                        materials:MaterialForeground.Mode="Automatic">

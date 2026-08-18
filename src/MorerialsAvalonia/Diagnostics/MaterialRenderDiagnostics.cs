@@ -27,7 +27,7 @@ public enum MaterialShaderState
 /// </summary>
 public sealed class MaterialRenderDiagnostics : INotifyPropertyChanged
 {
-    private string _captureState = "等待 Windows Graphics Capture";
+    private string _captureState = "等待 Desktop Duplication";
     private string _adapter = "D3D11 适配器尚未初始化";
     private string _interopState = "等待 Avalonia GPU 互操作";
     private string? _error;
@@ -43,7 +43,7 @@ public sealed class MaterialRenderDiagnostics : INotifyPropertyChanged
     /// </summary>
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    /// <summary>获取当前 Windows Graphics Capture 状态。</summary>
+    /// <summary>获取当前 Desktop Duplication 状态。</summary>
     public string CaptureState
     {
         get => _captureState;
@@ -94,7 +94,7 @@ public sealed class MaterialRenderDiagnostics : INotifyPropertyChanged
         }
     }
 
-    /// <summary>获取 WGC 输入帧率。</summary>
+    /// <summary>获取 Desktop Duplication 输入帧率。</summary>
     public double CaptureFramesPerSecond
     {
         get => _captureFramesPerSecond;
@@ -153,7 +153,7 @@ public sealed class MaterialRenderDiagnostics : INotifyPropertyChanged
             var captureTiming = double.IsFinite(CaptureFrameAgeMilliseconds)
                 ? $"{CaptureFramesPerSecond:0} Hz / {CaptureFrameAgeMilliseconds:0} ms"
                 : "等待中";
-            return $"着色器 {ShaderState} | {FramesPerSecond:0} FPS | WGC {captureTiming} | {CaptureState} | 丢帧 {DroppedFrames}";
+            return $"着色器 {ShaderState} | {FramesPerSecond:0} FPS | Desktop Duplication {captureTiming} | {CaptureState} | 丢帧 {DroppedFrames}";
         }
     }
 

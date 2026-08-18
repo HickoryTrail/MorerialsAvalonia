@@ -68,12 +68,15 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
     private long _captureFrameBase;
     private long _nextCaptureSourceCheck;
     private long _lastPresentedCaptureVersion = -1;
+    private long _lastObservedCaptureVersion = -1;
     private long _pendingCaptureVersion = -1;
     private long _lastPresentedRegionVersion = -1;
     private long _lastForegroundProbeVersion = -1;
     private long _nextForegroundSamplingTick;
     private PixelSize _lastPresentedOutputSize;
     private PixelPoint _lastPresentedSurfaceOffset;
+    private PixelPoint _captureSourceOrigin;
+    private bool _hasCaptureSourceOrigin;
     private double _fpsTimeBase;
     private bool _suspended;
     private bool _disposed;
@@ -118,7 +121,7 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
             outputSize.Width <= 0 || outputSize.Height <= 0 || _capture.IsSuspended)
             return false;
 
-        // 首个 WGC 帧到达前没有可呈现纹理；等待期间让合成回调保持空闲，避免忙等。
+        // 首个 Desktop Duplication 帧到达前没有可呈现纹理；等待期间让合成回调保持空闲，避免忙等。
         if (_captureView.Handle is null)
             return _capture.HasLatestFrame;
 
@@ -146,9 +149,12 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
         _suspended = false;
         _lastPresentedCaptureVersion = -1;
         _pendingCaptureVersion = -1;
+        _lastObservedCaptureVersion = -1;
         _lastPresentedRegionVersion = -1;
         _lastPresentedOutputSize = default;
         _lastPresentedSurfaceOffset = default;
+        _captureSourceOrigin = default;
+        _hasCaptureSourceOrigin = false;
         _lastForegroundProbeVersion = -1;
         _nextForegroundSamplingTick = 0;
     }
@@ -164,6 +170,7 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
         if (_disposed || _suspended || outputSize.Width <= 0 || outputSize.Height <= 0)
             return;
 
+        CaptureFrameLease? pendingCaptureFrame = null;
         try
         {
             TryReadForegroundLuminance();
@@ -205,7 +212,11 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
             var released = false;
             try
             {
-                if (CopyLatestCaptureFrame(outputSize, surfaceOffset, out var captureVersion))
+                if (CopyLatestCaptureFrame(
+                        outputSize,
+                        surfaceOffset,
+                        out var captureVersion,
+                        out pendingCaptureFrame))
                 {
                     _pendingCaptureVersion = captureVersion;
                     _captureCopies++;
@@ -238,6 +249,10 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
                 if (shouldComposite || needsForegroundSampling)
                     _context.Flush();
 
+                pendingCaptureFrame?.MarkConsumed();
+                pendingCaptureFrame?.Dispose();
+                pendingCaptureFrame = null;
+
                 if (shouldComposite)
                 {
                     ThrowHResult(slot.Mutex.ReleaseSync(1));
@@ -262,6 +277,8 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
         }
         catch (Exception exception)
         {
+            pendingCaptureFrame?.MarkConsumed();
+            pendingCaptureFrame?.Dispose();
             MaterialLogger.Write("D3D11 材质渲染失败", exception);
             _diagnostics.Fail($"GPU 材质渲染已停止: {exception.Message}");
             throw;
@@ -269,11 +286,29 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
     }
 
     private bool NeedsComposite(PixelSize outputSize, PixelPoint surfaceOffset, long regionVersion)
-        => _capture!.HasLatestFrame ||
+        => _capture!.HasPendingFrameForCrop(
+               outputSize,
+               surfaceOffset,
+               _hwnd,
+               _lastObservedCaptureVersion) ||
+           HasCaptureSourceOriginChanged(surfaceOffset) ||
            _pendingCaptureVersion != _lastPresentedCaptureVersion ||
            _lastPresentedRegionVersion != regionVersion ||
            _lastPresentedOutputSize != outputSize ||
            _lastPresentedSurfaceOffset != surfaceOffset;
+
+    private bool HasCaptureSourceOriginChanged(PixelPoint surfaceOffset)
+    {
+        if (_capture is null || _capture.Monitor == 0)
+            return false;
+
+        var monitorRect = WindowsNative.GetMonitorRect(_capture.Monitor);
+        var clientOrigin = WindowsNative.GetClientScreenOrigin(_hwnd);
+        var origin = new PixelPoint(
+            clientOrigin.X - monitorRect.Left + surfaceOffset.X,
+            clientOrigin.Y - monitorRect.Top + surfaceOffset.Y);
+        return !_hasCaptureSourceOrigin || origin != _captureSourceOrigin;
+    }
 
     private bool HasPendingForegroundReadback
         => _foregroundReadbackSlots.Any(static slot => slot is { Pending: true });
@@ -483,29 +518,61 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
     private bool CopyLatestCaptureFrame(
         PixelSize outputSize,
         PixelPoint surfaceOffset,
-        out long frameVersion)
+        out long frameVersion,
+        out CaptureFrameLease? pendingFrame)
     {
-        using var frame = _capture!.TryTakeLatestFrame();
+        pendingFrame = null;
+        var frame = _capture!.TryGetLatestFrame();
         if (frame is null)
         {
             frameVersion = 0;
             return false;
         }
 
-        frameVersion = frame.Version;
+        try
+        {
+            frameVersion = frame.Version;
 
-        using var source = frame.GetTexture();
-        Texture2DDesc sourceDescription;
-        source.GetDesc(&sourceDescription);
-        if (_captureTexture.Handle is null || outputSize != _captureSize)
-            RecreateCaptureResources(sourceDescription, outputSize);
-
-        var monitorRect = WindowsNative.GetMonitorRect(_capture.Monitor);
+        var monitorRect = WindowsNative.GetMonitorRect(frame.Monitor);
         var clientOrigin = WindowsNative.GetClientScreenOrigin(_hwnd);
         var desiredLeft = clientOrigin.X - monitorRect.Left + surfaceOffset.X;
         var desiredTop = clientOrigin.Y - monitorRect.Top + surfaceOffset.Y;
         var desiredRight = desiredLeft + outputSize.Width;
         var desiredBottom = desiredTop + outputSize.Height;
+        var sourceOrigin = new PixelPoint(desiredLeft, desiredTop);
+        var requiresFullCopy = _captureTexture.Handle is null ||
+            outputSize != _captureSize ||
+            !_hasCaptureSourceOrigin ||
+            sourceOrigin != _captureSourceOrigin;
+
+        if (!requiresFullCopy && frame.Version <= _lastObservedCaptureVersion)
+        {
+            frame.MarkConsumed();
+            frame.Dispose();
+            return false;
+        }
+
+        _lastObservedCaptureVersion = Math.Max(_lastObservedCaptureVersion, frame.Version);
+
+        using var source = frame.GetTexture();
+        Texture2DDesc sourceDescription;
+        source.GetDesc(&sourceDescription);
+        if (!requiresFullCopy && !frame.IntersectsCrop(
+                desiredLeft,
+                desiredTop,
+                desiredRight,
+                desiredBottom))
+        {
+            frame.MarkConsumed();
+            frame.Dispose();
+            return false;
+        }
+
+        if (requiresFullCopy)
+            RecreateCaptureResources(sourceDescription, outputSize);
+
+        _captureSourceOrigin = sourceOrigin;
+        _hasCaptureSourceOrigin = true;
 
         var sourceLeft = Math.Clamp(desiredLeft, 0, (int)sourceDescription.Width);
         var sourceTop = Math.Clamp(desiredTop, 0, (int)sourceDescription.Height);
@@ -514,6 +581,8 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
         if (sourceRight <= sourceLeft || sourceBottom <= sourceTop)
         {
             ClearCaptureTexture();
+            frame.MarkConsumed();
+            frame.Dispose();
             return true;
         }
 
@@ -549,7 +618,15 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
             (ID3D11Resource*)source.Handle,
             0,
             &sourceBox);
-        return true;
+            pendingFrame = frame;
+            return true;
+        }
+        catch
+        {
+            frame.MarkConsumed();
+            frame.Dispose();
+            throw;
+        }
     }
 
     private void ClearCaptureTexture()
@@ -588,9 +665,8 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
             (RenderTargetViewDesc*)null,
             _captureRenderTarget.GetAddressOf()));
         DisposeBlurResources();
-        _diagnostics.CaptureState = _capture!.IsBorderlessCapture
-            ? $"live window {size.Width}x{size.Height}, GPU crop, borderless"
-            : $"live window {size.Width}x{size.Height}, GPU crop, system border";
+        _diagnostics.CaptureState =
+            $"live window {size.Width}x{size.Height}, GPU crop, Desktop Duplication";
     }
 
     private void EnsureBlurResources(float downsampleScale)
@@ -1239,6 +1315,37 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
         }
 
         private void DisposeGraphicsResources()
+        {
+            try
+            {
+                var disposal = _importedImage.DisposeAsync();
+                if (disposal.IsCompletedSuccessfully)
+                {
+                    DisposeD3DResources();
+                    return;
+                }
+
+                _ = disposal.AsTask().ContinueWith(
+                    static (task, state) =>
+                    {
+                        var slot = (OutputSlot)state!;
+                        if (task.Exception is { } exception)
+                            MaterialLogger.Write("Avalonia GPU 材质图像释放失败", exception.GetBaseException());
+                        slot.DisposeD3DResources();
+                    },
+                    this,
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+            }
+            catch (Exception exception)
+            {
+                MaterialLogger.Write("Avalonia GPU 材质图像释放失败", exception);
+                DisposeD3DResources();
+            }
+        }
+
+        private void DisposeD3DResources()
         {
             Mutex.Dispose();
             UnorderedAccessView.Dispose();

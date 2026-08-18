@@ -8,7 +8,7 @@ using MorerialsAvalonia.Rendering;
 namespace MorerialsAvalonia;
 
 /// <summary>
-/// 为其内容树中的材质控件提供共享 Windows Graphics Capture 和 D3D11 合成上下文。
+/// 为其内容树中的材质控件提供共享 Desktop Duplication 和 D3D11 合成上下文。
 /// </summary>
 /// <remarks>
 /// 每个顶级窗口只能放置一个活动宿主。请将 <c>LiquidGlassContainer</c>
