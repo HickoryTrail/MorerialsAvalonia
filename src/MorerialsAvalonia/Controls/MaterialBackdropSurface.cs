@@ -167,14 +167,12 @@ public sealed class MaterialBackdropSurface : Control
 
             _hwnd = handle.Handle;
             UpdateCaptureExclusion();
-            var borderlessCaptureAllowed = await BorderlessCaptureAccess.RequestAsync();
             _renderer = new D3D11MaterialRenderer(
                 _hwnd,
                 interop,
                 _surface,
                 _host.Diagnostics,
-                _host.ForegroundProbeRegistry,
-                borderlessCaptureAllowed);
+                _host.ForegroundProbeRegistry);
             _renderer.RenderInvalidated += OnRenderInvalidated;
             _initialized = true;
             UpdateRenderActivity();

@@ -1,8 +1,10 @@
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using Windows.Graphics.Capture;
 using Windows.Graphics.DirectX.Direct3D11;
+using Windows.Foundation.Metadata;
 using WinRT;
 using WinRtD3DDevice = Windows.Graphics.DirectX.Direct3D11.IDirect3DDevice;
 using WinRtD3DSurface = Windows.Graphics.DirectX.Direct3D11.IDirect3DSurface;
@@ -33,6 +35,9 @@ internal static unsafe partial class WindowsNative
 
     private static readonly Guid D3D11Texture2DId =
         new("6F15AAF2-D208-4E89-9AB4-489535D34F9C");
+
+    private static readonly Guid GraphicsCaptureSession3Id =
+        new("F2CDD966-22AE-5EA1-9596-3A289344C3BE");
 
     [LibraryImport("user32.dll")]
     internal static partial nint MonitorFromWindow(nint hwnd, uint flags);
@@ -143,6 +148,41 @@ internal static unsafe partial class WindowsNative
         finally
         {
             Marshal.Release(interop);
+        }
+    }
+
+    [SupportedOSPlatform("windows10.0.20348")]
+    internal static bool TryDisableCaptureBorder(GraphicsCaptureSession session)
+    {
+        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348) ||
+            !ApiInformation.IsPropertyPresent(
+                "Windows.Graphics.Capture.GraphicsCaptureSession",
+                "IsBorderRequired"))
+            return false;
+
+        nint sessionAbi = 0;
+        nint session3 = 0;
+        try
+        {
+            sessionAbi = MarshalInterface<GraphicsCaptureSession>.FromManaged(session);
+            if (Marshal.QueryInterface(sessionAbi, in GraphicsCaptureSession3Id, out session3) < 0)
+                return false;
+
+            var vtable = *(nint**)session3;
+            var setIsBorderRequired =
+                (delegate* unmanaged[Stdcall]<nint, byte, int>)vtable[7];
+            return setIsBorderRequired(session3, 0) >= 0;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (session3 != 0)
+                Marshal.Release(session3);
+            if (sessionAbi != 0)
+                MarshalInterface<GraphicsCaptureSession>.DisposeAbi(sessionAbi);
         }
     }
 

@@ -83,8 +83,7 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
         ICompositionGpuInterop interop,
         CompositionDrawingSurface surface,
         MaterialRenderDiagnostics diagnostics,
-        ForegroundProbeRegistry foregroundProbes,
-        bool borderlessCaptureAllowed)
+        ForegroundProbeRegistry foregroundProbes)
     {
         _hwnd = hwnd;
         _interop = interop;
@@ -99,7 +98,7 @@ internal sealed unsafe class D3D11MaterialRenderer : IDisposable
 
         CreateDevice(interop.DeviceLuid);
         CreatePipelineResources();
-        _capture = new DesktopCaptureService(_device, diagnostics, borderlessCaptureAllowed);
+        _capture = new DesktopCaptureService(_device, diagnostics);
         _capture.FrameAvailable += OnCaptureFrameAvailable;
         _capture.EnsureMonitor(_hwnd);
         _nextCaptureSourceCheck = Stopwatch.GetTimestamp() + Stopwatch.Frequency / 4;

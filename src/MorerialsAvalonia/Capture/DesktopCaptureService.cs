@@ -2,8 +2,6 @@ using MorerialsAvalonia;
 using MorerialsAvalonia.Diagnostics;
 using MorerialsAvalonia.Native;
 using System.Diagnostics;
-using System.Reflection;
-using System.Runtime.Versioning;
 using Silk.NET.Core.Native;
 using Silk.NET.Direct3D11;
 using Silk.NET.DXGI;
@@ -11,9 +9,6 @@ using Windows.Graphics;
 using Windows.Graphics.Capture;
 using Windows.Graphics.DirectX;
 using Windows.Graphics.DirectX.Direct3D11;
-using Windows.Foundation;
-using Windows.Foundation.Metadata;
-using Windows.Security.Authorization.AppCapabilityAccess;
 using WinRtD3DDevice = Windows.Graphics.DirectX.Direct3D11.IDirect3DDevice;
 
 namespace MorerialsAvalonia.Capture;
@@ -69,83 +64,12 @@ internal sealed class PendingCaptureFrame : IDisposable
     public void Dispose() => Frame.Dispose();
 }
 
-internal static class BorderlessCaptureAccess
-{
-    public static async Task<bool> RequestAsync()
-    {
-        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348) ||
-            !ApiInformation.IsTypePresent("Windows.Graphics.Capture.GraphicsCaptureAccess") ||
-            !ApiInformation.IsPropertyPresent(
-                "Windows.Graphics.Capture.GraphicsCaptureSession",
-                "IsBorderRequired"))
-            return false;
-
-        try
-        {
-            // These APIs are optional and newer SDK projections do not exist in the 19041 reference pack.
-            var assembly = typeof(GraphicsCaptureSession).Assembly;
-            var accessType = assembly.GetType("Windows.Graphics.Capture.GraphicsCaptureAccess");
-            var accessKindType = assembly.GetType("Windows.Graphics.Capture.GraphicsCaptureAccessKind");
-            if (accessType is null || accessKindType is null)
-                return false;
-
-            var requestMethod = accessType.GetMethod(
-                "RequestAccessAsync",
-                BindingFlags.Public | BindingFlags.Static,
-                binder: null,
-                types: new[] { accessKindType },
-                modifiers: null);
-            if (requestMethod is null)
-                return false;
-
-            var accessKind = Enum.Parse(accessKindType, "Borderless");
-            var operation = requestMethod.Invoke(null, new[] { accessKind })
-                as IAsyncOperation<AppCapabilityAccessStatus>;
-            if (operation is null)
-                return false;
-
-            var status = await AwaitAsyncOperation(operation);
-            return status == AppCapabilityAccessStatus.Allowed;
-        }
-        catch
-        {
-            // 未打包运行的 Windows 应用可能会拒绝受限能力请求，此时继续使用有边框捕获。
-            return false;
-        }
-    }
-
-    private static Task<AppCapabilityAccessStatus> AwaitAsyncOperation(
-        IAsyncOperation<AppCapabilityAccessStatus> operation)
-    {
-        var completion = new TaskCompletionSource<AppCapabilityAccessStatus>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        operation.Completed = (asyncInfo, status) =>
-        {
-            try
-            {
-                if (status == AsyncStatus.Completed)
-                    completion.TrySetResult(asyncInfo.GetResults());
-                else if (status == AsyncStatus.Canceled)
-                    completion.TrySetCanceled();
-                else
-                    completion.TrySetException(new InvalidOperationException(
-                        $"Graphics capture access request ended with status {status}."));
-            }
-            catch (Exception exception)
-            {
-                completion.TrySetException(exception);
-            }
-        };
-        return completion.Task;
-    }
-}
-
 internal sealed unsafe class DesktopCaptureService : IDisposable
 {
     private readonly object _gate = new();
     private readonly MaterialRenderDiagnostics _diagnostics;
     private readonly WinRtD3DDevice _winRtDevice;
-    private readonly bool _borderlessCaptureAllowed;
+    private bool _borderlessCaptureActive;
     private Direct3D11CaptureFramePool? _framePool;
     private GraphicsCaptureSession? _session;
     private GraphicsCaptureItem? _item;
@@ -160,11 +84,9 @@ internal sealed unsafe class DesktopCaptureService : IDisposable
 
     public DesktopCaptureService(
         ComPtr<ID3D11Device> device,
-        MaterialRenderDiagnostics diagnostics,
-        bool borderlessCaptureAllowed)
+        MaterialRenderDiagnostics diagnostics)
     {
         _diagnostics = diagnostics;
-        _borderlessCaptureAllowed = borderlessCaptureAllowed;
         using var dxgiDevice = device.QueryInterface<IDXGIDevice>();
         _winRtDevice = WindowsNative.CreateWinRtDevice((nint)dxgiDevice.Handle);
     }
@@ -173,7 +95,7 @@ internal sealed unsafe class DesktopCaptureService : IDisposable
     public event Action? FrameAvailable;
 
     public nint Monitor => _monitor;
-    public bool IsBorderlessCapture => _borderlessCaptureAllowed;
+    public bool IsBorderlessCapture => _borderlessCaptureActive;
     public long ReceivedFrames => Interlocked.Read(ref _receivedFrames);
     public long LastFrameTimestamp => Volatile.Read(ref _lastFrameTimestamp);
     public long DroppedFrames => Interlocked.Read(ref _droppedFrames);
@@ -263,12 +185,9 @@ internal sealed unsafe class DesktopCaptureService : IDisposable
                     size);
                 var session = pool.CreateCaptureSession(item);
                 session.IsCursorCaptureEnabled = false;
-                if (_borderlessCaptureAllowed &&
+                _borderlessCaptureActive =
                     OperatingSystem.IsWindowsVersionAtLeast(10, 0, 20348) &&
-                    ApiInformation.IsPropertyPresent(
-                        "Windows.Graphics.Capture.GraphicsCaptureSession",
-                        "IsBorderRequired"))
-                    TryDisableCaptureBorder(session);
+                    WindowsNative.TryDisableCaptureBorder(session);
 
                 item.Closed += OnCaptureItemClosed;
                 pool.FrameArrived += OnFrameArrived;
@@ -279,7 +198,7 @@ internal sealed unsafe class DesktopCaptureService : IDisposable
                 session.StartCapture();
 
                 State = DesktopCaptureState.Capturing;
-                _diagnostics.CaptureState = _borderlessCaptureAllowed
+                _diagnostics.CaptureState = _borderlessCaptureActive
                     ? $"live {size.Width}x{size.Height}, borderless"
                     : $"live {size.Width}x{size.Height}, system border";
             }
@@ -373,6 +292,7 @@ internal sealed unsafe class DesktopCaptureService : IDisposable
             item.Closed -= OnCaptureItemClosed;
         _item = null;
         Interlocked.Exchange(ref _latestFrame, null)?.Dispose();
+        _borderlessCaptureActive = false;
         _monitor = 0;
     }
 
@@ -393,25 +313,5 @@ internal sealed unsafe class DesktopCaptureService : IDisposable
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(DesktopCaptureService));
-    }
-
-    [SupportedOSPlatform("windows10.0.20348")]
-    private static bool TryDisableCaptureBorder(GraphicsCaptureSession session)
-    {
-        var property = typeof(GraphicsCaptureSession).GetProperty(
-            "IsBorderRequired",
-            BindingFlags.Public | BindingFlags.Instance);
-        if (property?.CanWrite != true)
-            return false;
-
-        try
-        {
-            property.SetValue(session, false);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
     }
 }
